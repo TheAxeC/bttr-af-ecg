@@ -1,0 +1,8 @@
+numpy>=1.24
+scipy>=1.10
+pandas>=2.0
+scikit-learn>=1.3
+tensorly>=0.8        # BTTR core (vendored bttrlib uses tensorly's tucker/parafac)
+PyWavelets>=1.4
+wfdb>=4.1
+matplotlib>=3.7      # only for interpret.py figures (optional at runtime)
