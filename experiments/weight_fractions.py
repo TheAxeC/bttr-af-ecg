@@ -1,11 +1,9 @@
 """Temporal weight-fraction breakdown of the BTTR block maps (reproducible).
 
-The interpretability paragraph reports what fraction of the model's discriminative
-weight falls in each part of the cardiac cycle. That split was previously computed
-by hand from the saved block-map npz with unpinned window boundaries; this script
-pins the boundaries to standard ECG-interval definitions (relative to the R-peak at
-t = 0, on the -250..+400 ms median-beat window) and regenerates the numbers so they
-are byte-reproducible.
+Reports what fraction of the model's discriminative weight falls in each part of
+the cardiac cycle, for the seed-0 whole-cohort fits written by interpret_afsr.py
+(the maps of Fig. 2). The window boundaries are fixed ECG-interval definitions
+relative to the R-peak at t = 0, on the -250..+400 ms median-beat window.
 
 Importance at time t = sum_{blocks k, leads l} |map[k,t,l]| * |b[k]|  (same weighting
 as the map-stability metric). Window fraction = importance summed over that window /

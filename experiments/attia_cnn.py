@@ -22,7 +22,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 
 from core import config
 from core import preprocess as pp
-from experiments.harden_afsr import _afsr_frames, _build_recs, _db_with_ondisk
+from experiments.harden_afsr import _afsr_frames, _build_recs, load_db
 
 DEV = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 OUTER, SEED, N_ENS = 5, 0, 3
@@ -74,10 +74,12 @@ def _train_one(Xtr, ytr, Xva, yva, n_leads, seed):
     return model
 
 
-def cnn_oof(X, y, groups):
-    """X: (N, leads, time). Returns OOF scores aligned to samples (3-seed ensemble)."""
+def cnn_oof(X, y, groups, fold_seed=SEED):
+    """X: (N, leads, time). Returns OOF scores aligned to samples (3-seed ensemble).
+    fold_seed sets the outer patient-grouped split, so the CNN can be scored on the
+    same folds as BTTR under the ten-draw protocol (fold seed = draw seed)."""
     s = np.zeros(len(y))
-    outer = StratifiedGroupKFold(OUTER, shuffle=True, random_state=SEED)
+    outer = StratifiedGroupKFold(OUTER, shuffle=True, random_state=fold_seed)
     for tr, te in outer.split(np.zeros(len(y)), y, groups):
         # inner validation split (patient-grouped) for early stopping
         inner = StratifiedGroupKFold(4, shuffle=True, random_state=SEED)
@@ -107,13 +109,13 @@ def patient_boot(scores_dict, y, groups, n=N_BOOT):
         for m, s in scores_dict.items():
             coll[m].append(roc_auc_score(y[idx], s[idx]))
     for m, v in coll.items():
-        v = np.array(v); out[m] = (float(v.mean()), float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5)))
+        v = np.array(v); out[m] = (float(roc_auc_score(y, scores_dict[m])), float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5)))
     return out
 
 
 def main():
     print(f"device={DEV}")
-    db = _db_with_ondisk()
+    db = load_db()
     rows = []
     for include_flutter, tag in ((False, "AFIB (primary)"), (True, "AFIB+AFLT (secondary)")):
         pos, healthy = _afsr_frames(db, include_flutter)

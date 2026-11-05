@@ -16,15 +16,17 @@ from core import baselines as bl
 from core import config
 from core import preprocess as pp
 from experiments.attia_cnn import cnn_oof
+from experiments.hubert_probe import embeddings_for
+from experiments.paired_test import _hubert_tuned_c
 from core.bttr_model import BTTRClassifier
-from experiments.harden_afsr import _afsr_frames, _build_recs, _db_with_ondisk
+from experiments.harden_afsr import _afsr_frames, _build_recs, load_db
 
 K, SEED = 8, 0
 
 
-def oof(method, recs, T, emb, y, g):
+def oof(method, recs, T, emb, y, g, fold_seed=SEED):
     s = np.full(len(y), np.nan)
-    sk = StratifiedGroupKFold(5, shuffle=True, random_state=SEED)
+    sk = StratifiedGroupKFold(5, shuffle=True, random_state=fold_seed)
     for tr, te in sk.split(np.zeros(len(y)), y, g):
         if method == "bttr":
             s[te] = BTTRClassifier(nfactor=K).fit(T[tr], y[tr]).decision_function(T[te])
@@ -39,9 +41,10 @@ def oof(method, recs, T, emb, y, g):
             sc = StandardScaler().fit(Xtr)
             lr = LogisticRegression(max_iter=1000, random_state=SEED).fit(sc.transform(Xtr), y[tr])
             s[te] = lr.predict_proba(sc.transform(Xte))[:, 1]
-        elif method == "hubert":
+        elif method in ("hubert", "hubert_tuned"):
+            c = 0.1 if method == "hubert" else _hubert_tuned_c(emb, y, g, tr)
             sc = StandardScaler().fit(emb[tr])
-            lr = LogisticRegression(max_iter=2000, C=0.1, random_state=SEED).fit(sc.transform(emb[tr]), y[tr])
+            lr = LogisticRegression(max_iter=2000, C=c, random_state=SEED).fit(sc.transform(emb[tr]), y[tr])
             s[te] = lr.predict_proba(sc.transform(emb[te]))[:, 1]
     return s
 
@@ -55,16 +58,16 @@ def boot(scores, y, g, n=2000):
             continue
         for m, s in scores.items():
             coll[m].append(roc_auc_score(y[ii], s[ii]))
-    return {m: (float(np.mean(v)), float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5))) for m, v in coll.items()}
+    return {m: (float(roc_auc_score(y, scores[m])), float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5))) for m, v in coll.items()}
 
 
 def main():
-    db = _db_with_ondisk(); rows = []
-    for inc, tag, embf in ((False, "AFIB (primary)", "afib"), (True, "AFIB+AFLT (secondary)", "aflt")):
+    db = load_db(); rows = []
+    for inc, tag in ((False, "AFIB (primary)"), (True, "AFIB+AFLT (secondary)")):
         pos, healthy = _afsr_frames(db, inc); recs = _build_recs(pos, healthy, SEED)
         y = np.array([r.label for r in recs]); g = np.array([r.patient_id for r in recs])
         config.TENSORISATION = "median_beat"; T = pp.build_tensor(recs)
-        emb = np.load(config.RESULTS_DIR / f"hubert_emb_{embf}.npy")
+        emb = embeddings_for(recs)
         Xcnn = np.transpose(T, (0, 2, 1)).astype(np.float32)
         scores = {"bttr": oof("bttr", recs, T, emb, y, g),
                   "cp": oof("cp", recs, T, emb, y, g),

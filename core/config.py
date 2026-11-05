@@ -27,6 +27,7 @@ from pathlib import Path
 # --------------------------------------------------------------------------- #
 PTBXL_DIR = Path("~/data/ptb-xl").expanduser()   # has ptbxl_database.csv, records500/, records100/
 RESULTS_DIR = Path(__file__).resolve().parents[1] / "results"   # the package results/ dir (regenerable; deposit-excluded)
+MANIFEST_DIR = Path(__file__).resolve().parents[1] / "manifests"   # record-level cohort and split manifests (deposited)
 
 # --------------------------------------------------------------------------- #
 # Reproducibility                                                             #

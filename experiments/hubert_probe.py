@@ -18,7 +18,7 @@ from sklearn.preprocessing import StandardScaler
 from core import config
 from core import preprocess as pp
 from core.bttr_model import BTTRClassifier
-from experiments.harden_afsr import _afsr_frames, _build_recs, _db_with_ondisk
+from experiments.harden_afsr import _afsr_frames, _build_recs, load_db
 
 SEED = 0
 DEV = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -57,6 +57,31 @@ def embed(model, recs, fs=100):
     return np.array(embs)
 
 
+EMB_CACHE = config.RESULTS_DIR / "hubert_emb.npz"
+_MODEL = None
+
+
+def embeddings_for(recs):
+    """HuBERT-ECG embeddings of `recs`, in their order, from a cache keyed by ecg_id.
+
+    Records not yet in results/hubert_emb.npz are embedded with the frozen model and
+    added to the cache, so any control draw can be scored."""
+    global _MODEL
+    cache = {}
+    if EMB_CACHE.exists():
+        z = np.load(EMB_CACHE)
+        cache = dict(zip(z["ecg_id"].tolist(), z["emb"]))
+    todo = [r for r in recs if int(r.record_id) not in cache]
+    if todo:
+        if _MODEL is None:
+            _MODEL = load_hubert()
+        for r, e in zip(todo, embed(_MODEL, todo)):
+            cache[int(r.record_id)] = e
+        ids = sorted(cache)
+        np.savez(EMB_CACHE, ecg_id=np.array(ids), emb=np.stack([cache[i] for i in ids]))
+    return np.stack([cache[int(r.record_id)] for r in recs])
+
+
 def oof(method, recs, X, emb, y, groups):
     s = np.full(len(y), np.nan)
     outer = StratifiedGroupKFold(5, shuffle=True, random_state=SEED)
@@ -80,19 +105,19 @@ def boot(scores, y, g, ref="bttr", n=2000):
         a = {m: roc_auc_score(y[ii], s[ii]) for m, s in scores.items()}
         for m in scores:
             coll[m].append(a[m]); dl[m].append(a[m] - a[ref])
-    return {m: (float(np.mean(coll[m])), float(np.percentile(coll[m], 2.5)), float(np.percentile(coll[m], 97.5)),
-               float(np.mean(dl[m])), float(np.mean(np.array(dl[m]) > 0))) for m in scores}
+    pt = {m: float(roc_auc_score(y, s)) for m, s in scores.items()}
+    return {m: (pt[m], float(np.percentile(coll[m], 2.5)), float(np.percentile(coll[m], 97.5)),
+               pt[m] - pt[ref], float(np.mean(np.array(dl[m]) > 0))) for m in scores}
 
 
 def main():
-    print(f"device={DEV}; loading HuBERT-ECG-small ...")
-    model = load_hubert()
-    db = _db_with_ondisk(); rows = []
+    print(f"device={DEV}")
+    db = load_db(); rows = []
     for inc, tag in ((False, "AFIB (primary)"), (True, "AFIB+AFLT (secondary)")):
         pos, healthy = _afsr_frames(db, inc); recs = _build_recs(pos, healthy, SEED)
         y = np.array([r.label for r in recs]); g = np.array([r.patient_id for r in recs])
         config.TENSORISATION = "median_beat"; X = pp.build_tensor(recs)
-        emb = embed(model, recs)
+        emb = embeddings_for(recs)
         print(f"[{tag}] emb shape {emb.shape}")
         scores = {"bttr": oof("bttr", recs, X, emb, y, g), "hubert": oof("hubert", recs, X, emb, y, g)}
         ci = boot(scores, y, g, "bttr")
@@ -101,7 +126,6 @@ def main():
             flag = "  <-- STRONG TEACHER" if (m == "hubert" and dp > 0.8) else ""
             print(f"  {m:8s} AUROC={mu:.3f} [{lo:.3f},{hi:.3f}] AUPRC={ap:.3f}  dvs_bttr={dm:+.3f} P(>0)={dp:.2f}{flag}")
             rows.append({"cohort": tag, "method": m, "auroc": mu, "ci_lo": lo, "ci_hi": hi, "auprc": ap, "d_vs_bttr": dm, "p_gt0": dp})
-        np.save(config.RESULTS_DIR / f"hubert_emb_{'aflt' if inc else 'afib'}.npy", emb)
     pd.DataFrame(rows).to_csv(config.RESULTS_DIR / "hubert_probe.csv", index=False)
     print(f"\nWrote {config.RESULTS_DIR / 'hubert_probe.csv'}")
 

@@ -26,7 +26,7 @@ from core import baselines as bl
 from core import config
 from core import preprocess as pp
 from core.bttr_model import BTTRClassifier
-from experiments.harden_afsr import _afsr_frames, _build_recs, _db_with_ondisk
+from experiments.harden_afsr import _afsr_frames, _build_recs, load_db
 
 config.TENSORISATION = "median_beat"
 OUTER, INNER, SEED = 5, 3, 0
@@ -81,7 +81,7 @@ def oof_tuned(method, recs, tensor, y, groups):
 
 
 def patient_bootstrap(scores, y, groups, n=N_BOOT):
-    """Resample PATIENTS with replacement; return AUROC mean and 95% CI per method,
+    """Resample PATIENTS with replacement; return the AUROC point estimate on the out-of-fold scores and the 95% percentile CI per method,
     plus paired delta(bttr-clinical) CI. scores: dict method->aligned score array."""
     rng = np.random.default_rng(SEED)
     pats = np.unique(groups)
@@ -102,9 +102,9 @@ def patient_bootstrap(scores, y, groups, n=N_BOOT):
     out = {}
     for m, v in aucs.items():
         v = np.array(v)
-        out[m] = (float(np.mean(v)), float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5)))
+        out[m] = (float(roc_auc_score(y, scores[m])), float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5)))
     d = np.array(deltas)
-    out["_delta"] = (float(np.mean(d)), float(np.percentile(d, 2.5)), float(np.percentile(d, 97.5)),
+    out["_delta"] = (float(roc_auc_score(y, scores["bttr"]) - roc_auc_score(y, scores["clinical"])), float(np.percentile(d, 2.5)), float(np.percentile(d, 97.5)),
                      float((d > 0).mean()))
     return out
 
@@ -134,7 +134,7 @@ def map_stability(pos, healthy, k=8, n_seeds=N_STAB_SEEDS, permute=False):
 
 
 def main():
-    db = _db_with_ondisk()
+    db = load_db()
     rows = []
     for include_flutter, tag in ((False, "AFIB (primary)"), (True, "AFIB+AFLT (secondary)")):
         pos, healthy = _afsr_frames(db, include_flutter)
@@ -160,8 +160,8 @@ def main():
     leads = config.LEAD_NAMES
     top = ", ".join(f"{leads[i]}={prof[i]:.2f}" for i in np.argsort(-prof)[:4])
     print(f"\n=== block-map stability (AFIB primary, K=8, {N_STAB_SEEDS} seeds) ===")
-    print(f"  mean pairwise per-lead-profile Pearson r = {r_mean:.3f} ± {r_std:.3f}")
-    print(f"  label-permutation null Pearson r        = {rp_mean:.3f} ± {rp_std:.3f}")
+    print(f"  mean pairwise per-lead-profile Pearson r = {r_mean:.3f} +/- {r_std:.3f}")
+    print(f"  label-permutation null Pearson r        = {rp_mean:.3f} +/- {rp_std:.3f}")
     print(f"  consensus top leads: {top}")
     rows.append({"cohort": "AFIB (primary)", "method": "mapstab_pearson_r", "auroc": r_mean, "ci_lo": r_mean - r_std, "ci_hi": r_mean + r_std, "auprc": np.nan})
     rows.append({"cohort": "AFIB (primary)", "method": "mapstab_pearson_r_permuted", "auroc": rp_mean, "ci_lo": rp_mean - rp_std, "ci_hi": rp_mean + rp_std, "auprc": np.nan})

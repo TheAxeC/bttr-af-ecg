@@ -27,7 +27,7 @@ from core import baselines as bl
 from core import config
 from core import preprocess as pp
 from core.bttr_model import BTTRClassifier
-from experiments.harden_afsr import _afsr_frames, _build_recs, _db_with_ondisk
+from experiments.harden_afsr import _afsr_frames, _build_recs, load_db
 
 N_SEEDS = 10
 K_GRID = (6, 8, 12, 16)
@@ -71,7 +71,7 @@ def _clinical_oof(recs, y, groups, seed):
 
 def main():
     config.TENSORISATION = "median_beat"
-    db = _db_with_ondisk()
+    db = load_db()
     rows = []
     for include_flutter in (False, True):
         pos, healthy = _afsr_frames(db, include_flutter)
@@ -91,8 +91,8 @@ def main():
         except Exception:
             p = float("nan")
         print(f"\n[{tag}] n_pos={len(pos)} nested-CV (K tuned in {K_GRID})")
-        print(f"  BTTR     {b_aucs.mean():.3f} ± {b_aucs.std():.3f}")
-        print(f"  clinical {c_aucs.mean():.3f} ± {c_aucs.std():.3f}")
+        print(f"  BTTR     {b_aucs.mean():.3f} +/- {b_aucs.std():.3f}")
+        print(f"  clinical {c_aucs.mean():.3f} +/- {c_aucs.std():.3f}")
         print(f"  paired delta = {diff.mean():+.3f} (min {diff.min():+.3f}, all_positive={bool((diff>0).all())}) "
               f"Wilcoxon p={p:.4f}")
         rows.append({"cohort": tag, "n_pos": len(pos),

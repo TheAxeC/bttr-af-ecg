@@ -17,13 +17,13 @@ import numpy as np
 
 from core import config
 from experiments import interpret as interp
-from experiments.harden_afsr import _afsr_frames, _build_recs, _db_with_ondisk
+from experiments.harden_afsr import _afsr_frames, _build_recs, load_db
 
 
 def main():
     config.TENSORISATION = "median_beat"
     config.BTTR_NFACTOR = 8
-    db = _db_with_ondisk()
+    db = load_db()
     for include_flutter, prefix in ((False, "interpret_afsr_afibonly"), (True, "interpret_afsr")):
         pos, healthy = _afsr_frames(db, include_flutter)
         recs = _build_recs(pos, healthy, seed=0)

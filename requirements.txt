@@ -6,3 +6,5 @@ tensorly>=0.8        # BTTR core (vendored bttrlib uses tensorly's tucker/parafa
 PyWavelets>=1.4
 wfdb>=4.1
 matplotlib>=3.7      # only for interpret.py figures (optional at runtime)
+torch>=2.1           # CNN baseline and the HuBERT-ECG encoder
+transformers>=4.40   # loads the HuBERT-ECG checkpoint

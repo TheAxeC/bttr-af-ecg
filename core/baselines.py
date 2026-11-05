@@ -53,7 +53,7 @@ def clinical_features(recordings):
 # --------------------------------------------------------------------------- #
 def _fit_cp(tensor, rank, seed):
     (w, factors) = parafac(tl.tensor(tensor), rank=rank, n_iter_max=100, tol=1e-7,
-                           init="svd", svd="randomized_svd", normalize_factors=True,
+                           init="svd", svd="truncated_svd", normalize_factors=True,
                            l2_reg=1e-3, random_state=seed)
     A, B, C = factors
     return A * w[None, :], B, C
